@@ -10,6 +10,125 @@ from library.dataset import Dataset
 class Preprocessing:
     def __init__(self, dataset: Dataset) -> None:
         self.dataset = dataset
+
+    def analyze_duplicates(self, drop: bool = False):
+    """
+    Analiza y elimina duplicados en el dataframe.
+
+    Parameters
+    ----------
+    drop : bool, default=False
+        Si es True, elimina los duplicados del dataframe.
+
+    Returns
+    -------
+    int
+        Número de filas duplicadas encontradas.
+    """
+    num_duplicates = self.df.duplicated().sum()
+    print(f"Duplicados encontrados: {num_duplicates}")
+
+    if num_duplicates > 0:
+        print("Ejemplo de duplicados:")
+        print(self.df[self.df.duplicated()].head())
+
+        if drop:
+            self.df = self.df.drop_duplicates().reset_index(drop=True)
+            print("Duplicados eliminados.")
+
+    return num_duplicates
+
+    def analyze_missing_data(self, drop_threshold: float = 0.5, fill_method: str = None):
+    """
+    Analiza y trata los valores faltantes en el dataframe.
+
+    Parameters
+    ----------
+    drop_threshold : float, default=0.5
+        Si el porcentaje de valores nulos en una columna es mayor que este umbral, se elimina la columna.
+
+    fill_method : str, default=None
+        Método para imputar valores nulos. Opciones: 'mean', 'median', 'mode'. 
+        Si es None, no imputa nada.
+
+    Returns
+    -------
+    pd.DataFrame
+        DataFrame con el análisis de valores faltantes.
+    """
+    missing_counts = self.df.isnull().sum()
+    missing_percent = (missing_counts / len(self.df)) * 100
+    missing_data = pd.DataFrame({'Missing Count': missing_counts, 'Missing %': missing_percent})
+    
+    print("Valores faltantes por columna:")
+    print(missing_data[missing_data['Missing Count'] > 0])
+
+    # Eliminar columnas con muchos nulos
+    cols_to_drop = missing_data[missing_data['Missing %'] > drop_threshold * 100].index.tolist()
+    if cols_to_drop:
+        print(f"Eliminando columnas con más del {drop_threshold*100}% de nulos: {cols_to_drop}")
+        self.df.drop(columns=cols_to_drop, inplace=True)
+
+    # Imputar valores si se especifica un método
+    if fill_method:
+        if fill_method == 'mean':
+            self.df.fillna(self.df.mean(), inplace=True)
+        elif fill_method == 'median':
+            self.df.fillna(self.df.median(), inplace=True)
+        elif fill_method == 'mode':
+            self.df.fillna(self.df.mode().iloc[0], inplace=True)
+        else:
+            print("Método no reconocido. Usa 'mean', 'median' o 'mode'.")
+    
+    return missing_data
+
+    def analyze_class_balance(self, target_column: str, apply_smote: bool = False):
+    """
+    Analiza el balance de clases y aplica SMOTE si es necesario.
+
+    Parameters
+    ----------
+    target_column : str
+        Nombre de la columna objetivo.
+
+    apply_smote : bool, default=False
+        Si es True, aplica SMOTE para balancear las clases.
+
+    Returns
+    -------
+    pd.Series
+        Distribución de clases antes del balanceo.
+    """
+    class_counts = self.df[target_column].value_counts()
+    print("Distribución de clases:")
+    print(class_counts)
+
+    # Verificar si el dataset está desbalanceado
+    min_class = class_counts.min()
+    max_class = class_counts.max()
+    imbalance_ratio = max_class / min_class
+    print(f"Ratio de desbalanceo: {imbalance_ratio:.2f}")
+
+    if imbalance_ratio > 2:  # Umbral arbitrario, cambiar si es necesario
+        print("⚠️ Se detecta un desbalanceo de clases.")
+    else:
+        print("✅ No hay un desbalanceo significativo.")
+
+    # Aplicar SMOTE si es necesario
+    if apply_smote:
+        print("Aplicando SMOTE para balancear las clases...")
+        X, y = self.__get_X_y__(target_column)
+        categorical_features = X.select_dtypes(include=['object', 'category']).columns
+
+        smote_nc = SMOTENC(categorical_features=[X.columns.get_loc(col) for col in categorical_features], random_state=RANDOM_STATE)
+        X_resampled, y_resampled = smote_nc.fit_resample(X, y)
+        
+        # Crear nuevo dataframe balanceado
+        self.df = pd.DataFrame(X_resampled, columns=X.columns)
+        self.df[target_column] = y_resampled
+        print("✔️ SMOTE aplicado con éxito.")
+
+    return class_counts
     
     def remove_reboot_column(self) -> None:
         self.X_train_without_reboot = self.dataset.X_train.drop(columns="Reboot")
